@@ -14,7 +14,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:4173',
-  'https://promptbox.app'
+  'https://promptbox.app',
+  'https://prompt-box-buddy.vercel.app'
 ];
 
 // Helper function to handle CORS

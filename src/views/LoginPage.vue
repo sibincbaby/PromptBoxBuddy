@@ -22,7 +22,7 @@
       
       <div class="mt-8 space-y-6">
         <button 
-          @click="handleGoogleSignIn" 
+          @click="handleGoogleLogin" 
           :disabled="loading"
           class="group relative w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 border-gray-300"
         >
@@ -44,53 +44,71 @@
   </div>
 </template>
 
-<script setup>
-import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
-import { useAuthStore } from '@/store/modules/authStore';
-import { useNotificationStore } from '@/store/modules/notificationStore';
+<script>
+import { useAuthStore } from "@/store/modules/authStore";
+import { signInWithGoogle, processRedirectResult } from "@/services/firebaseService";
 
-const router = useRouter();
-const authStore = useAuthStore();
-const notificationStore = useNotificationStore();
-
-const loading = ref(false);
-const error = ref(null);
-
-// Handle Google sign in
-async function handleGoogleSignIn() {
-  if (loading.value) return;
+export default {
+  name: "LoginPage",
   
-  error.value = null;
-  loading.value = true;
+  data() {
+    return {
+      loading: false,
+      error: null,
+    };
+  },
   
-  try {
-    await authStore.loginWithGoogle();
+  methods: {
+    async handleGoogleLogin() {
+      if (this.loading) return;
+      
+      this.error = null;
+      this.loading = true;
+      
+      const authStore = useAuthStore();
+      
+      try {
+        // First, try the popup method
+        try {
+          const userCredential = await signInWithGoogle(false);
+          if (userCredential && userCredential.user) {
+            authStore.user = userCredential.user;
+            this.$router.push("/");
+          }
+        } catch (error) {
+          // If there's a COOP error, the signInWithGoogle function will automatically
+          // fall back to redirect method. In other cases, we handle the error.
+          if (!error.message || !error.message.includes("Cross-Origin-Opener-Policy")) {
+            this.error = error.message || "Authentication failed";
+            this.loading = false;
+          }
+        }
+      } catch (error) {
+        this.error = error.message || "Authentication failed";
+        this.loading = false;
+      }
+    },
+  },
+  
+  async mounted() {
+    const authStore = useAuthStore();
     
-    // Add haptic feedback if available
-    if (window.navigator && window.navigator.vibrate) {
-      window.navigator.vibrate(30);
+    try {
+      // Check for any redirect results when the component loads
+      const redirectResult = await processRedirectResult();
+      if (redirectResult && redirectResult.user) {
+        authStore.user = redirectResult.user;
+        this.$router.push("/");
+      }
+    } catch (error) {
+      this.error = error.message || "Authentication failed";
+    } finally {
+      this.loading = false;
     }
-    
-    notificationStore.success('Successfully signed in');
-    router.push('/');
-  } catch (err) {
-    console.error('Login failed:', err);
-    error.value = err.message || 'Failed to sign in with Google';
-    
-    // Error haptic feedback
-    if (window.navigator && window.navigator.vibrate) {
-      window.navigator.vibrate([100]);
-    }
-  } finally {
-    loading.value = false;
   }
-}
-
-// Check if user is already logged in
-onMounted(() => {
-  if (authStore.isAuthenticated) {
-    router.push('/');
-  }
-});
+};
 </script>
+
+<style scoped>
+/* ...existing code... */
+</style>
