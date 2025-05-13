@@ -5,14 +5,48 @@
     <header class="bg-surface shadow-sm z-10">
       <div class="px-4 py-3 flex justify-between items-center">
         <h1 class="text-lg font-semibold bg-gradient-to-r from-indigo-600 to-blue-500 bg-clip-text text-transparent">PromptBox</h1>
-        <div class="flex items-center space-x-1">
-          <!-- Optional header actions (like search, account, etc) -->
+        <div class="flex items-center space-x-3">
+          <!-- User avatar and dropdown menu if authenticated -->
+          <div v-if="authStore.isAuthenticated" class="relative">
+            <button 
+              @click="toggleUserMenu" 
+              class="flex items-center focus:outline-none"
+            >
+              <img 
+                v-if="authStore.userProfile?.photoURL" 
+                :src="authStore.userProfile.photoURL" 
+                :alt="authStore.userProfile?.displayName || 'User'" 
+                class="w-8 h-8 rounded-full border border-gray-200"
+              >
+              <div v-else class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold">
+                {{ getInitials(authStore.userProfile?.displayName) }}
+              </div>
+            </button>
+            
+            <div v-if="showUserMenu" class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 animate-fade-in">
+              <div class="px-4 py-2 text-sm text-gray-700 border-b border-gray-100">
+                <div class="font-medium">{{ authStore.userProfile?.displayName }}</div>
+                <div class="text-xs text-gray-500">{{ authStore.userProfile?.email }}</div>
+              </div>
+              <button 
+                @click="handleLogout" 
+                class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </header>
 
+    <!-- Loading indicator for authentication -->
+    <div v-if="authStore.loading" class="flex-grow flex items-center justify-center">
+      <div class="h-8 w-8 border-t-2 border-b-2 border-indigo-500 rounded-full animate-spin"></div>
+    </div>
+    
     <!-- Main Content Area with animations -->
-    <main class="flex-grow overflow-auto thin-scrollbar pb-safe relative">
+    <main v-else class="flex-grow overflow-auto thin-scrollbar pb-safe relative">
       <router-view v-slot="{ Component }">
         <transition
           name="page"
@@ -37,8 +71,8 @@
       </button>
     </main>
 
-    <!-- Mobile Bottom Navigation Bar -->
-    <nav class="bg-surface shadow-lg border-t border-gray-100 pb-safe">
+    <!-- Mobile Bottom Navigation Bar (only shown if authenticated) -->
+    <nav v-if="authStore.isAuthenticated" class="bg-surface shadow-lg border-t border-gray-100 pb-safe">
       <div class="flex justify-around items-center">
         <router-link to="/" class="mobile-tab-button group py-2 px-4" active-class="text-indigo-600">
           <div class="flex flex-col items-center">
@@ -86,13 +120,56 @@
 
 <script setup>
 import { Analytics } from '@vercel/analytics/vue';
-import { inject } from 'vue';
+import { inject, ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
+import { useAuthStore } from '@/store/modules/authStore';
+import { useNotificationStore } from '@/store/modules/notificationStore';
 import NotificationContainer from '@/components/ui/NotificationContainer.vue';
 
 // Get router and event bus
 const router = useRouter();
 const emitter = inject('emitter');
+const authStore = useAuthStore();
+const notificationStore = useNotificationStore();
+
+// User menu state
+const showUserMenu = ref(false);
+
+// Toggle user menu
+const toggleUserMenu = () => {
+  showUserMenu.value = !showUserMenu.value;
+};
+
+// Close menu when clicking outside
+const closeUserMenuOnClickOutside = (event) => {
+  if (showUserMenu.value) {
+    showUserMenu.value = false;
+  }
+};
+
+// Handle user logout
+const handleLogout = async () => {
+  try {
+    await authStore.logout();
+    showUserMenu.value = false;
+    notificationStore.success('Successfully signed out');
+    router.push('/login');
+  } catch (err) {
+    console.error('Logout failed:', err);
+    notificationStore.error('Failed to sign out');
+  }
+};
+
+// Get initials from user name for avatar fallback
+const getInitials = (name) => {
+  if (!name) return 'U';
+  return name
+    .split(' ')
+    .map(part => part.charAt(0))
+    .join('')
+    .toUpperCase()
+    .substring(0, 2);
+};
 
 // Scripts for handling page transitions
 const beforePageLeave = (el) => {
@@ -120,6 +197,20 @@ const navigateToNewTemplate = () => {
   // Navigate directly to the new template page
   router.push('/template/new');
 };
+
+// Initialize authentication on component mount
+onMounted(() => {
+  // Initialize auth state
+  authStore.init();
+  
+  // Add click outside listener
+  document.addEventListener('click', closeUserMenuOnClickOutside);
+});
+
+// Cleanup event listener on component unmount
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeUserMenuOnClickOutside);
+});
 </script>
 
 <style>
@@ -171,6 +262,22 @@ html, body {
   to { 
     transform: translateY(0) scale(1); 
     opacity: 1; 
+  }
+}
+
+/* Fade-in animation for dropdown menus */
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { 
+    opacity: 0; 
+    transform: translateY(-5px);
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0);
   }
 }
 </style>

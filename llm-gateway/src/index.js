@@ -5,6 +5,7 @@
  * 1. Keep the API key secure (stored as a Cloudflare secret)
  * 2. Provide a consistent API endpoint for the frontend
  * 3. Handle rate limiting and error management
+ * 4. Verify Firebase authentication tokens
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -33,9 +34,66 @@ function handleCors(request) {
   return corsHeaders;
 }
 
+// Helper function to verify Firebase JWT token
+async function verifyFirebaseToken(token, env) {
+  try {
+    // For production, ideally use Firebase Admin SDK with Workers
+    // This is a simplified approach using Firebase's REST API for verification
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${env.FIREBASE_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          idToken: token
+        })
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.error("Token verification failed:", data.error);
+      return null;
+    }
+    
+    // Return user data if token is valid
+    return data.users?.[0] || null;
+  } catch (error) {
+    console.error("Token verification error:", error);
+    return null;
+  }
+}
+
 // Process Gemini API request
 async function processGeminiRequest(request, env) {
   try {
+    // Check for authentication token
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Extract token
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    
+    // Verify token
+    const userData = await verifyFirebaseToken(token, env);
+    if (!userData) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid or expired token' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // User is authenticated, continue with request processing
+    console.log(`Authenticated user: ${userData.email}`);
+    
     // Parse request body
     const requestData = await request.json();
     const { 

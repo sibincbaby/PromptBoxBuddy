@@ -6,6 +6,7 @@ import App from './App.vue'
 import router from './router'
 import { useSettingsStore } from './store/modules/settingsStore'
 import { useNotificationStore } from './store/modules/notificationStore'
+import { useAuthStore } from './store/modules/authStore'
 import mitt from 'tiny-emitter/instance'
 
 // Create Vue app
@@ -32,12 +33,13 @@ app.provide('appVersion', __APP_VERSION__)
 app.use(router)
 app.use(pinia)
 
-// Initialize settings store
+// Initialize stores
+const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
-settingsStore.loadAllSettings()
-
-// Initialize notification store for update messages
 const notificationStore = useNotificationStore()
+
+// Initialize settings
+settingsStore.loadAllSettings()
 
 // Set up periodic checks for updates in PWA mode
 if (window.matchMedia('(display-mode: standalone)').matches || 

@@ -1,4 +1,5 @@
 import { useSettingsStore } from '@/store/modules/settingsStore';
+import { useAuthStore } from '@/store/modules/authStore';
 
 // Define API endpoint for the Cloudflare worker
 // In production, this should point to your deployed Cloudflare worker URL
@@ -6,9 +7,15 @@ const API_ENDPOINT = import.meta.env.VITE_GEMINI_API_ENDPOINT || 'https://llm-ga
 
 export async function callGeminiApi(prompt) {
   const settingsStore = useSettingsStore();
+  const authStore = useAuthStore();
   
   // Force a fresh load of settings before each API call to ensure the latest template settings are used
   await settingsStore.loadAllSettings();
+
+  // Check if user is authenticated
+  if (!authStore.isAuthenticated) {
+    throw new Error('You must be signed in to use this feature.');
+  }
 
   // If currentTemplateId exists, verify that the template still exists
   if (settingsStore.currentTemplateId) {
@@ -28,6 +35,16 @@ export async function callGeminiApi(prompt) {
   }
 
   try {
+    // Get fresh id token for authentication
+    let token = authStore.idToken;
+    if (!token) {
+      // Try to refresh the token
+      token = await authStore.refreshIdToken();
+      if (!token) {
+        throw new Error('Authentication failed. Please sign in again.');
+      }
+    }
+    
     // Log the current template being used
     console.log('Using template:', settingsStore.currentTemplateName || 'Default');
     
@@ -47,14 +64,43 @@ export async function callGeminiApi(prompt) {
       structuredOutputConfig
     };
     
-    // Make the API call to our Cloudflare worker
+    // Make the API call to our Cloudflare worker with authentication
     const response = await fetch(API_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify(requestData)
     });
+    
+    // Handle 401 Unauthorized errors by refreshing token and retrying
+    if (response.status === 401) {
+      // Try to refresh the token
+      const newToken = await authStore.refreshIdToken();
+      
+      if (newToken) {
+        // Retry with new token
+        const retryResponse = await fetch(API_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${newToken}`
+          },
+          body: JSON.stringify(requestData)
+        });
+        
+        const retryData = await retryResponse.json();
+        
+        if (!retryResponse.ok) {
+          throw new Error(retryData.error || 'Failed to get response from API');
+        }
+        
+        return retryData.response;
+      } else {
+        throw new Error('Session expired. Please sign in again.');
+      }
+    }
     
     // Parse the JSON response
     const data = await response.json();
@@ -82,6 +128,9 @@ export async function callGeminiApi(prompt) {
     }
     if (error.message.includes('Schema error')) {
       throw error; // Pass through schema validation errors
+    }
+    if (error.message.includes('Authentication failed')) {
+      throw new Error('Authentication failed. Please sign in again.');
     }
     
     throw new Error(error.message || 'An unknown error occurred while contacting the Gemini API.');
