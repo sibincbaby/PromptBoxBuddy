@@ -45,6 +45,7 @@
       <div class="h-8 w-8 border-t-2 border-b-2 border-indigo-500 rounded-full animate-spin"></div>
     </div>
     
+    
     <!-- Main Content Area with animations -->
     <main v-else class="flex-grow overflow-auto thin-scrollbar pb-safe relative">
       <router-view v-slot="{ Component }">
